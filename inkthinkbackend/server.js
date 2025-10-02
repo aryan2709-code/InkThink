@@ -3,6 +3,8 @@ import "dotenv/config"
 import cors from "cors";
 import connectDB from "./config/mongoDB.js";
 import userRouter from "./routes/userRoute.js";
+import {createServer} from "http";
+import { initSocketIO } from "./socket/index.js";
 
 //app config
 const app = express();
@@ -23,6 +25,12 @@ app.get("/" , (req,res) => {
     res.send("API is working nicely at the moment");
 })
 
-app.listen(port, () => {
-    console.log("Server started on port ", port);
-})
+// Create a raw http server and attaching the express application to it
+const httpServer = createServer(app); 
+// Initialise the socket.io connection
+initSocketIO(httpServer);
+
+// Start Sever
+httpServer.listen(port,() => {
+console.log("Server Started at port ",port);
+});
