@@ -1,7 +1,7 @@
 // All the logic related to rooms, i.e room creation , keeping track of the sockets enrolled in a room, etc lives here 
 
 // Tracking Rooms and their players
-const rooms = new Map();
+import rooms from "./rooms.js";
 // Structure : roomId => { players : Set(socketIds) } // using a set ensures no player can be added twice to the same room
 
 const roomHandler = (io,socket) => {
@@ -20,7 +20,16 @@ const roomHandler = (io,socket) => {
             }
 
             // Create a new room in the map
-            rooms.set(roomId, {players : new Set([socket.id])} )
+            rooms.set(roomId, {
+                players : new Set([socket.id]),
+                scores : new Map([[socket.id,0]]),
+                drawer : null,
+                currentWord : null, //active word for the round
+                roundActive : false,
+                roundNumber : 0,
+                totalRounds : 5, // will be set equal to players.size() in the beginning
+                ongoingGame : false // Needed to prevent someone from joining during an running game
+            } )
 
             // Join this client into the room
             socket.join(roomId);
@@ -51,9 +60,14 @@ const roomHandler = (io,socket) => {
                 return socket.emit("error", {"message" : "This room does not exist"})
              }
 
+
              console.log(`User ${username} wants to join the room ${roomId}`);
 
              const room = rooms.get(roomId);
+             if(room.ongoingGame)
+             {
+                return socket.emit("error",{"message" : "Game already started, can't join"})
+             }
              room.players.add(socket.id);
 
              // Join this client into the room
