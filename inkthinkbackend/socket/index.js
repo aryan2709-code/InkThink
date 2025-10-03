@@ -1,6 +1,7 @@
 // Entry point for socket.io backend part
 
 import { Server, Socket } from "socket.io";
+import roomHandler from "./roomHandler.js";
 
 let io; //we will export this later if needed
 
@@ -15,6 +16,9 @@ const initSocketIO = (httpServer) => {
 
     io.on("connection", (socket) => {
         console.log("New Client connected", socket.id);
+
+        // Attach room related listeners to this socket
+        roomHandler(io,socket);
 
         // Handle disconnects
         socket.on("disconnect", () => {
