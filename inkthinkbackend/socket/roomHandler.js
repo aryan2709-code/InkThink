@@ -1,7 +1,7 @@
 // All the logic related to rooms, i.e room creation , keeping track of the sockets enrolled in a room, etc lives here 
 
 // Tracking Rooms and their players
-import rooms from "./rooms.js";
+import {rooms} from "./gameState.js";
 // Structure : roomId => { players : Set(socketIds) } // using a set ensures no player can be added twice to the same room
 
 const roomHandler = (io,socket) => {
