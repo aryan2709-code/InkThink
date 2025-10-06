@@ -1,99 +1,162 @@
-import { useState, useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
 import { io } from "socket.io-client";
 
-const socket = io("http://localhost:4000"); // your backend URL
+export default function App() {
+  const socketRef = useRef(null);
+  if (!socketRef.current) socketRef.current = io("http://localhost:4000");
+  const socket = socketRef.current;
 
-const App = () => {
   const [username, setUsername] = useState("");
   const [roomId, setRoomId] = useState("");
   const [messages, setMessages] = useState([]);
+  const [players, setPlayers] = useState([]);
+  const [isDrawer, setIsDrawer] = useState(false);
+  const [currentWord, setCurrentWord] = useState("");
+  const canvasRef = useRef(null);
+  const drawingRef = useRef(false);
 
-  // Listen for events from backend
-  useEffect(() => {
-    socket.on("connect", () => {
-      console.log("Connected with socket ID:", socket.id);
-    });
+  // --- Safe addMessage ---
+  const addMessage = (msg) => {
+    if (!msg) return;
 
-    socket.on("disconnect", () => {
-      console.log("Disconnected from server");
-    });
-
-    socket.on("message", (msg) => {
+    if (typeof msg === "string") {
       setMessages((prev) => [...prev, msg]);
-    });
+    } else if (typeof msg === "object" && msg.message) {
+      setMessages((prev) => [...prev, msg.message]);
+    } else {
+      setMessages((prev) => [...prev, JSON.stringify(msg)]);
+    }
+  };
 
-    socket.on("roomCreated", ({ roomId, username }) => {
-      setMessages((prev) => [...prev, `Room ${roomId} created by ${username}`]);
-    });
+  // --- Canvas Drawing ---
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext("2d");
 
-    socket.on("roomJoined", ({ roomId, username }) => {
-      setMessages((prev) => [...prev, `${username} joined room ${roomId}`]);
-    });
+    const handleMouseDown = () => (drawingRef.current = true);
+    const handleMouseUp = () => (drawingRef.current = false);
+    const handleMouseMove = (e) => {
+      if (!drawingRef.current || !isDrawer) return;
+      const rect = canvas.getBoundingClientRect();
+      const stroke = {
+        x: e.clientX - rect.left,
+        y: e.clientY - rect.top,
+      };
+      ctx.fillRect(stroke.x, stroke.y, 2, 2);
+      socket.emit("drawing", { roomId, stroke });
+    };
 
-    socket.on("playerLeft", ({ socket: socketId }) => {
-      setMessages((prev) => [...prev, `Player ${socketId} left the room`]);
-    });
-
-    socket.on("error", (err) => {
-      setMessages((prev) => [...prev, `Error: ${err.message}`]);
-    });
+    canvas.addEventListener("mousedown", handleMouseDown);
+    canvas.addEventListener("mouseup", handleMouseUp);
+    canvas.addEventListener("mousemove", handleMouseMove);
 
     return () => {
-      socket.off("connect");
-      socket.off("disconnect");
-      socket.off("message");
-      socket.off("roomCreated");
-      socket.off("roomJoined");
-      socket.off("playerLeft");
-      socket.off("error");
+      canvas.removeEventListener("mousedown", handleMouseDown);
+      canvas.removeEventListener("mouseup", handleMouseUp);
+      canvas.removeEventListener("mousemove", handleMouseMove);
     };
-  }, []);
+  }, [isDrawer, roomId, socket]);
 
-  const handleCreateRoom = () => {
-    if (!roomId || !username) return alert("Enter username and room ID");
-    socket.emit("createRoom", { roomId, username });
-  };
+  // --- Socket Listeners ---
+  useEffect(() => {
+    const handlers = {
+      roomCreated: ({ roomId }) => addMessage(`Room ${roomId} created!`),
+      roomJoined: ({ roomId }) => addMessage(`Joined room ${roomId}`),
+      message: addMessage,
+      playerLeft: ({ message }) => addMessage(message),
+      gameStarted: ({ players: roomPlayers }) => setPlayers(roomPlayers || []),
+      roundStarted: ({ drawer }) => {
+        addMessage(`New round! Drawer: ${drawer}`);
+        setIsDrawer(drawer === username);
+      },
+      yourTurn: ({ word }) => {
+        addMessage(`Your turn! Draw: ${word}`);
+        setCurrentWord(word);
+      },
+      drawing: ({ stroke }) => {
+        if (!stroke) return;
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        const ctx = canvas.getContext("2d");
+        ctx.fillRect(stroke.x, stroke.y, 2, 2);
+      },
+      correctGuess: ({ player, guess }) =>
+        addMessage(`${player} guessed correctly: ${guess}`),
+      roundEnded: ({ winner, word }) =>
+        addMessage(`Round ended. Word: ${word}. Winner: ${winner || "Nobody"}`),
+      gameEnded: ({ winner }) =>
+        addMessage(`Game ended. Winner: ${winner || "Nobody"}`),
+      guessFeedback: ({ correct, guess }) => {
+        if (!correct) addMessage(`Incorrect guess: ${guess}`);
+      },
+      cheatingDetected: ({ message }) => addMessage(message),
+      error: ({ message }) => addMessage(`Error: ${message}`),
+    };
 
-  const handleJoinRoom = () => {
-    if (!roomId || !username) return alert("Enter username and room ID");
-    socket.emit("joinRoom", { roomId, username });
-  };
+    Object.entries(handlers).forEach(([event, handler]) =>
+      socket.on(event, handler)
+    );
+    return () =>
+      Object.entries(handlers).forEach(([event, handler]) =>
+        socket.off(event, handler)
+      );
+  }, [socket, username]);
 
-  const handleLeaveRoom = () => {
-    if (!roomId || !username) return alert("Enter username and room ID");
-    socket.emit("leaveRoom", { roomId, username });
-  };
+  // --- Actions ---
+  const createRoom = () => socket.emit("createRoom", { roomId, username });
+  const joinRoom = () => socket.emit("joinRoom", { roomId, username });
+  const startGame = () => socket.emit("startGame", { roomId });
+  const submitGuess = (guess) => socket.emit("submitGuess", { roomId, guess });
+  const leaveRoom = () => socket.emit("leaveRoom", { roomId });
 
+  // --- UI ---
   return (
-    <div style={{ padding: "20px", fontFamily: "sans-serif" }}>
-      <h2>Socket.IO Room Test</h2>
+    <div style={{ padding: 20 }}>
+      <h1>Pictionary Test</h1>
 
-      <input
-        placeholder="Username"
-        value={username}
-        onChange={(e) => setUsername(e.target.value)}
-      />
-      <input
-        placeholder="Room ID"
-        value={roomId}
-        onChange={(e) => setRoomId(e.target.value)}
-      />
-      <div style={{ marginTop: "10px" }}>
-        <button onClick={handleCreateRoom}>Create Room</button>
-        <button onClick={handleJoinRoom}>Join Room</button>
-        <button onClick={handleLeaveRoom}>Leave Room</button>
+      <div>
+        <input
+          placeholder="Username"
+          value={username}
+          onChange={(e) => setUsername(e.target.value)}
+        />
+        <input
+          placeholder="Room ID"
+          value={roomId}
+          onChange={(e) => setRoomId(e.target.value)}
+        />
+        <button onClick={createRoom}>Create Room</button>
+        <button onClick={joinRoom}>Join Room</button>
+        <button onClick={startGame}>Start Game</button>
+        <button onClick={leaveRoom}>Leave Room</button>
       </div>
 
-      <div style={{ marginTop: "20px" }}>
+      <canvas
+        ref={canvasRef}
+        width={400}
+        height={400}
+        style={{ border: "1px solid black", marginTop: 10 }}
+      />
+
+      <div style={{ marginTop: 10 }}>
+        <input id="guessInput" placeholder="Type your guess" />
+        <button
+          onClick={() => {
+            const guess = document.getElementById("guessInput").value;
+            submitGuess(guess);
+          }}
+        >
+          Submit Guess
+        </button>
+      </div>
+
+      <div>
+        <h3>Players: {(players || []).join(", ")}</h3>
         <h3>Messages:</h3>
-        <div style={{ border: "1px solid #ccc", padding: "10px", minHeight: "100px" }}>
-          {messages.map((msg, idx) => (
-            <div key={idx}>{msg}</div>
-          ))}
-        </div>
+        {(messages || []).map((msg, i) => (
+          <p key={i}>{msg}</p>
+        ))}
       </div>
     </div>
   );
-};
-
-export default App;
+}

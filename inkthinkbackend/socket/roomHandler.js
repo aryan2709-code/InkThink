@@ -1,150 +1,153 @@
-// All the logic related to rooms, i.e room creation , keeping track of the sockets enrolled in a room, etc lives here 
+// All the logic related to rooms, i.e room creation , keeping track of the sockets enrolled in a room, etc lives here
+import { rooms } from "./gameState.js";
+import { endGame, endRound, clearRoundTimer } from "./gameHandler.js";
 
-// Tracking Rooms and their players
-import {rooms} from "./gameState.js";
-// Structure : roomId => { players : Set(socketIds) } // using a set ensures no player can be added twice to the same room
+// Clean-up logic for roomHandler: Handles both the game and room related events
+const roomCleanup = (io, roomId, socketId) => {
+  const room = rooms.get(roomId);
+  if (!room) return;
 
-const roomHandler = (io,socket) => {
+  // Game related clean-up
+  if (room.ongoingGame && room.roundActive && room.drawer === socketId) {
+    endRound(io, roomId, { reason: "drawer_left" });
+  }
+  if (room.ongoingGame && room.players.size < 2) {
+    endGame(roomId, io, { reason: "not_enough_players" });
+  }
 
-    // Listen for room create events from the client
-    socket.on("createRoom", ({roomId, username}) => {
+  // Room- Level Cleanup
+  const username = room.usernames.get(socketId);
+  room.players.delete(socketId);
+  io.to(room.id).emit("playerLeft", { message: `${username} left the game` });
+  if (room.players.size === 0) {
+    clearRoundTimer(room);
+    rooms.delete(roomId);
+    console.log(`Room ${roomId} deleted`);
+  }
+};
 
-        try
-        {
-            console.log(`User ${username} wants to create room: ${roomId}`);
+const roomHandler = (io, socket) => {
+  // Listen for room create events from the client
+  socket.on("createRoom", ({ roomId, username }) => {
+    try {
+      console.log(`User ${username} wants to create room: ${roomId}`);
 
-            // Check if room already exists
-            if(rooms.has(roomId))
-            {
-                return socket.emit("error",{"message" : "The room already exists"})
-            }
+      // Check if room already exists
+      if (rooms.has(roomId)) {
+        return socket.emit("error", { message: "The room already exists" });
+      }
 
-            // Create a new room in the map
-            rooms.set(roomId, {
-                players : new Set([socket.id]),
-                scores : new Map([[socket.id,0]]),
-                drawer : null,
-                currentWord : null, //active word for the round
-                roundActive : false,
-                roundNumber : 0,
-                totalRounds : 5, // will be set equal to players.size() in the beginning
-                ongoingGame : false // Needed to prevent someone from joining during an running game
-            } )
+      if (!username || username.trim().length === 0 || username.length > 20) {
+        return socket.emit("error", { message: "Invalid username" });
+      }
 
-            // Join this client into the room
-            socket.join(roomId);
+      // Create a new room in the map
+      rooms.set(roomId, {
+        players: new Set([socket.id]),
+        usernames: new Map([[socket.id, username]]),
+        scores: new Map([[socket.id, 0]]),
+        playerOrder: [], // will be populated when the game starts (snapshot of player order)
+        drawer: null,
+        currentWord: null, // active word for the round
+        roundActive: false,
+        roundNumber: 0,
+        totalRounds: 0, // can later be updated to players.size()
+        ongoingGame: false, // prevents joining mid-game
+        currentRoundTimer: null,
+        lastMLCheckAt: Date.now(), // optional timestamp for ML check tracking
+      });
 
-            // Acknowledge back to the client
-            socket.emit("roomCreated", {roomId, username});
+      // Join this client into the room
+      socket.join(roomId);
 
-            socket.to(roomId).emit("message", `${username} created room ${roomId}`);
+      // Acknowledge back to the client
+      socket.emit("roomCreated", {
+        roomId,
+        username,
+        message: "The room has been created!",
+      });
 
-            console.log(`Room ${roomId} created with player ${username}`);
-        }
-        catch (error)
-        {
-            console.log("Error in the create room handler: ", error.message);
-            socket.emit("error",{"message" : "failed to create room"})
-        }
+      socket
+        .to(roomId)
+        .emit("message", { message: `${username} created room ${roomId}` });
 
-    } )
+      console.log(`Room ${roomId} created with player ${username}`);
+    } catch (error) {
+      console.log("Error in the create room handler: ", error.message);
+      socket.emit("error", { message: "Failed to create the room" });
+    }
+  });
 
-    //  Listener for Room Join events from the client
-    socket.on("joinRoom", ({roomId, username}) => {
+  //  Listener for Room Join events from the client
+  socket.on("joinRoom", ({ roomId, username }) => {
+    try {
+      // First Check if the room exists or not
+      if (!rooms.has(roomId)) {
+        return socket.emit("error", { message: "This room does not exist" });
+      }
 
-        try 
-        {
-             // First Check if the room exists or not
-             if(!rooms.has(roomId))
-             {
-                return socket.emit("error", {"message" : "This room does not exist"})
-             }
+      console.log(`User ${username} wants to join the room ${roomId}`);
+      if (!username || username.trim().length === 0 || username.length > 20) {
+        return socket.emit("error", { message: "Invalid username" });
+      }
 
+      const room = rooms.get(roomId);
+      if (room.ongoingGame) {
+        return socket.emit("error", {
+          message: "Game has already started, you can't join",
+        });
+      }
+      if (!room.players.has(socket.id)) {
+        room.players.add(socket.id);
+        room.usernames.set(socket.id, username);
 
-             console.log(`User ${username} wants to join the room ${roomId}`);
+        // Join this client into the room
+        socket.join(roomId);
 
-             const room = rooms.get(roomId);
-             if(room.ongoingGame)
-             {
-                return socket.emit("error",{"message" : "Game already started, can't join"})
-             }
-             room.players.add(socket.id);
+        // Acknowledge Back to the client
+        socket.emit("roomJoined", {
+          roomId,
+          username,
+          message: "You have joined the room",
+        });
 
-             // Join this client into the room
-             socket.join(roomId);
+        // Notify others in the room
+        socket
+          .to(roomId)
+          .emit("message", { message: `${username} joined room ${roomId}` });
+      } else {
+        socket.emit("error", {
+          message: "You can not join the same room twice!",
+        });
+      }
+    } catch (error) {
+      console.log("Error in the joinRoom handler", error.message);
+      socket.emit("error", { message: "Failed to join the room" });
+    }
+  });
 
-             // Acknowledge Back to the client
-             socket.emit("roomJoined", {roomId, username});
+  // Listener for leaving room events from the client
+  socket.on("leaveRoom", ({ roomId }) => {
+    try {
+      roomCleanup(io, roomId, socket.id);
+    } catch (error) {
+      console.log("Error in the leaveRoom handler", error.message);
+      socket.emit("error", { message: "Failed to leave the room" });
+    }
+  });
 
-            // Notify others in the room
-            socket.to(roomId).emit("message", `${username} joined room ${roomId}`);
-        } 
-        catch (error)
-        {
-            console.log("Error in the joinRoom handler", error.message)
-            socket.emit("error",{"message" : "failed to join the room"})
-        }
-
-       
-    } )
-
-    // Listener for leaving room events from the client
-    socket.on("leaveRoom", ({roomId, username}) => {
-        try
-        {
-           if(rooms.has(roomId))
-           {
-              const room = rooms.get(roomId);
-              room.players.delete(socket.id);
-              console.log(`User ${username} wants to leave the room ${roomId}`)
-
-              // Remove this client from the room
-              socket.leave(roomId);
-
-              // Notify others in the room
-              io.to(roomId).emit("message", `${username} left the room ${roomId}`);
-
-              // Delete room if empty
-              if(room.players.size == 0)
-              {
-                rooms.delete(roomId);
-                console.log(`Room ${roomId} was deleted because it was empty`)
-              }
-           }
-        } 
-        catch (error)
-        {
-            console.log("Error in the leaveRoom handler", error.message);
-            socket.emit("error", {"message" : "failed to leave the room"});
-        }
-    } )
-
-    // Listener for disconnect clean-up
-    socket.on("disconnecting", () => {
-        // socket.rooms also contains the current socket's id, so filter it out
-        const joinedRooms = [...socket.rooms].filter(roomId => roomId !== socket.id);
-
-        // Run a loop on these joinedRooms and remove the current socket from each one of these rooms
-        joinedRooms.forEach(roomId => {
-            if(rooms.has(roomId))
-            {
-                const room = rooms.get(roomId);
-                // Remove this socket from the player's room's set
-                room.players.delete(socket.id);
-
-                // Notify remaining players in the room
-                socket.to(roomId).emit("playerLeft",{"socket" : socket.id})
-
-                // If the room is empty now, delete it
-                if(room.players.size == 0)
-                {
-                    rooms.delete(roomId);
-                    console.log(`Room ${roomId} was deleted because it was empty`);
-                }
-            }
-        })
-        console.log(`Socket ${socket.id} was disconnected and the cleanup logic was performed.`)
-    })
-}
+  // Listener for disconnect clean-up
+  socket.on("disconnecting", () => {
+    try {
+      [...socket.rooms]
+        .filter((r) => r !== socket.id)
+        .forEach((roomId) => {
+          roomCleanup(io, roomId, socket.id);
+        });
+    } catch (error) {
+      console.error("There was an error in the disconnecting listener:", error);
+    }
+  });
+};
 
 export default roomHandler;

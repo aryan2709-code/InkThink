@@ -2,6 +2,7 @@
 
 import { Server, Socket } from "socket.io";
 import roomHandler from "./roomHandler.js";
+import {gameHandler} from "./gameHandler.js";
 
 let io; //we will export this later if needed
 
@@ -19,6 +20,8 @@ const initSocketIO = (httpServer) => {
 
         // Attach room related listeners to this socket
         roomHandler(io,socket);
+        // Attach game related listeners to this socket
+        gameHandler(io,socket);
 
         // Handle disconnects
         socket.on("disconnect", () => {
