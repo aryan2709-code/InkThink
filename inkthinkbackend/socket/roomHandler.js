@@ -55,6 +55,7 @@ const roomHandler = (io, socket) => {
         ongoingGame: false, // prevents joining mid-game
         currentRoundTimer: null,
         lastMLCheckAt: Date.now(), // optional timestamp for ML check tracking
+        remainingTime: null
       });
 
       // Join this client into the room

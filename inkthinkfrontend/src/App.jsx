@@ -27,6 +27,7 @@ export default function App()
 
    // Game logic state
    const [players, setPlayers] = useState([]);
+   const [remainingTime, setRemainingTime] = useState(0);
    const [scores, setScores] = useState(new Map()); // Map<username, score>
    const [isDrawer, setIsDrawer] = useState(false);
    const [currentDrawer, setCurrentDrawer] = useState("");
@@ -212,11 +213,12 @@ export default function App()
         setTotalRounds(tr || pList.length);
         setGameState("game")
       },
-      roundStarted: ({drawer, roundNumber:rn, message}) => {
+      roundStarted: ({drawer, roundNumber:rn, remainingTime: rt, message}) => {
         addMessage(message || `Round ${rn + 1} started. ${drawer} is drawing.`);
         clearCanvasLocal();
         setIsDrawer(drawer === username);
         setCurrentDrawer(drawer);
+        setRemainingTime(Math.ceil((rt || 0) / 1000));
         setCurrentRound(rn || 0);
         if(drawer !== username)
         {
@@ -224,10 +226,16 @@ export default function App()
         }
         setGameWinner(null);
       },
-      yourTurn: ({word, message}) => {
+      yourTurn: ({word, message, remainingTime: rt}) => {
         addMessage( message || "Its your turn to draw");
         setCurrentWord(word);
+        setRemainingTime(Math.ceil((rt || 0) / 1000));
         setIsDrawer(true);
+      },
+      timerUpdate: ({remainingTime: msOrSec}) => {
+       const timeInMs = typeof msOrSec === 'number' ? msOrSec : 0;
+       const timeInSec = Math.ceil(timeInMs/1000);
+       setRemainingTime(timeInSec);
       },
       correctGuess: ({player, guess, message}) => {
         addMessage(message|| `${player} guessed correctly!`)
@@ -406,7 +414,6 @@ export default function App()
     <div className="w-full max-w-7xl mx-auto p-4 grid grid-cols-1 lg:grid-cols-4 gap-6">
       {/* --- Left Column: Players & Chat --- */}
       <div className="lg:col-span-1 space-y-6 flex flex-col">
-        
         {/* --- Scoreboard --- */}
         <div className="bg-slate-800 p-4 rounded-xl shadow-lg border border-slate-700">
           <h2 className="text-2xl font-bold text-white mb-3">Players</h2>
@@ -414,24 +421,40 @@ export default function App()
             {[...scores.entries()]
               .sort((a, b) => b[1] - a[1])
               .map(([name, score]) => (
-                <li key={name} className={`flex justify-between items-center p-2 rounded-lg ${currentDrawer === name ? 'bg-blue-700' : 'bg-slate-700'}`}>
+                <li
+                  key={name}
+                  className={`flex justify-between items-center p-2 rounded-lg ${
+                    currentDrawer === name ? "bg-blue-700" : "bg-slate-700"
+                  }`}
+                >
                   <span className="font-medium text-white">
                     {name}
                     {currentDrawer === name && " ✏️"}
                     {username === name && " (You)"}
                   </span>
-                  <span className="font-bold text-lg text-blue-300">{score}</span>
+                  <span className="font-bold text-lg text-blue-300">
+                    {score}
+                  </span>
                 </li>
-            ))}
+              ))}
           </ul>
         </div>
-        
+
         {/* --- Chat Box --- */}
         <div className="bg-slate-800 p-4 rounded-xl shadow-lg border border-slate-700 flex-grow flex flex-col min-h-[200px] lg:min-h-0">
           <h2 className="text-2xl font-bold text-white mb-3">Chat</h2>
           <div className="flex-grow bg-slate-900 p-3 rounded-lg overflow-y-auto text-sm border border-slate-700 h-48 lg:h-full">
             {messages.map((m, i) => (
-              <p key={i} className={`my-1 break-words ${m.startsWith("ERROR:") ? "text-red-400" : m.startsWith("SYSTEM:") ? "text-slate-400 italic" : "text-slate-200"}`}>
+              <p
+                key={i}
+                className={`my-1 break-words ${
+                  m.startsWith("ERROR:")
+                    ? "text-red-400"
+                    : m.startsWith("SYSTEM:")
+                    ? "text-slate-400 italic"
+                    : "text-slate-200"
+                }`}
+              >
                 {m}
               </p>
             ))}
@@ -442,7 +465,6 @@ export default function App()
 
       {/* --- Right Column: Game Area --- */}
       <div className="lg:col-span-3 space-y-4">
-        
         {/* --- Game Info Bar --- */}
         <div className="bg-slate-800 p-4 rounded-xl shadow-lg border border-slate-700 flex flex-wrap justify-between items-center gap-4">
           <button
@@ -452,22 +474,37 @@ export default function App()
           >
             Start Game
           </button>
-          
+
           <div className="text-xl font-bold text-white">
-            Round: <span className="text-blue-300">{totalRounds > 0 ? currentRound + 1 : '-'} / {totalRounds || '-'}</span>
+            Round:{" "}
+            <span className="text-blue-300">
+              {totalRounds > 0 ? currentRound + 1 : "-"} / {totalRounds || "-"}
+            </span>
           </div>
-          
+
           {/* --- THIS IS THE NEW LOCATION FOR THE WORD --- */}
           {isDrawer && currentWord && (
             <div className="text-xl font-bold text-white">
               Draw: <span className="text-green-400">{currentWord}</span>
             </div>
           )}
-          
+
           {/* This is the info bar version, good for all players to see who is drawing */}
           {!isDrawer && currentDrawer && (
-             <div className="text-xl font-bold text-white">
+            <div className="text-xl font-bold text-white">
               Drawer: <span className="text-blue-300">{currentDrawer}</span>
+            </div>
+          )}
+
+          {remainingTime != null && (
+            <div
+              className={`text-3xl font-extrabold ${
+                remainingTime <= 10
+                  ? "text-red-500 animate-pulse"
+                  : "text-slate-200"
+              }`}
+            >
+              ⏳ {remainingTime}s
             </div>
           )}
 
@@ -479,7 +516,9 @@ export default function App()
             ref={canvasRef}
             width={800} // Set fixed resolution for consistency
             height={500} // Set fixed resolution
-            className={`bg-white rounded-lg shadow-2xl w-full h-auto aspect-[8/5] ${isDrawer ? 'cursor-crosshair' : 'cursor-not-allowed'}`}
+            className={`bg-white rounded-lg shadow-2xl w-full h-auto aspect-[8/5] ${
+              isDrawer ? "cursor-crosshair" : "cursor-not-allowed"
+            }`}
           />
 
           {/* --- REMOVED: Drawer's Word (Overlay) --- */}
@@ -503,13 +542,17 @@ export default function App()
               value={guess}
               onChange={(e) => setGuess(e.target.value)}
               className="flex-grow px-4 py-3 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              placeholder={currentDrawer ? `Guess what ${currentDrawer} is drawing...` : "Waiting for round to start..."}
-              disabled={!currentDrawer}
+              placeholder={
+                currentDrawer
+                  ? `Guess what ${currentDrawer} is drawing...`
+                  : "Waiting for round to start..."
+              }
+              disabled={!currentDrawer || remainingTime === 0}
             />
             <button
               type="submit"
               className="px-6 py-3 font-semibold text-white bg-blue-600 rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:ring-offset-slate-900 transition duration-150 ease-in-out disabled:opacity-50"
-              disabled={!guess.trim() || !currentDrawer}
+              disabled={!guess.trim() || !currentDrawer || remainingTime === 0}
             >
               Submit
             </button>

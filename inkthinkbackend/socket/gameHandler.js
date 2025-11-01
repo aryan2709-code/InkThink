@@ -2,6 +2,7 @@
 
 import { rooms, words } from "./gameState.js";
 const ML_API_URL = ""; // will be integrated later
+const ROUND_DURATION = 60000; // in milli-seconds
 
 // This is the Structure of the Map used to manage the state of the game
 //   players: Set(socketId),
@@ -15,6 +16,7 @@ const ML_API_URL = ""; // will be integrated later
 //   ongoingGame: boolean,
 //   currentRoundTimer: Timeout | null,
 //   lastMLCheckAt: number (timestamp ms) // optional
+//   remainingTime: null (Eventually will be time)
 
 
 // Utility function to pick the next drawer
@@ -39,7 +41,7 @@ const pickWord = () => {
 const clearRoundTimer = (room) => {
   if (!room) return null;
   if (room.currentRoundTimer) {
-    clearTimeout(room.currentRoundTimer);
+    clearInterval(room.currentRoundTimer);
     room.currentRoundTimer = null;
   }
 };
@@ -151,19 +153,34 @@ const startRound = async (io, roomId) => {
     room.roundActive = true;
     room.lastMLCheckAt = 0;
 
+    room.remainingTime = ROUND_DURATION;
+
     // Drawer and the word has been decided, send this info to the players in the room
-    io.to(room.drawer).emit("yourTurn", { word: room.currentWord });
+    io.to(room.drawer).emit("yourTurn", { word: room.currentWord, remainingTime: room.remainingTime });
     io.to(roomId).emit("roundStarted", {
       roundNumber: room.roundNumber,
       drawer: room.usernames.get(room.drawer),
-      message : "The round has started!"
+      message : "The round has started!",
+      remainingTime: room.remainingTime 
     });
 
     // Start a roundTimer (Give a fix time to guess the word to the players)
     clearRoundTimer(room);
-    room.currentRoundTimer = setTimeout(() => {
-      endRound(io, roomId, { reason: "timeout" });
-    }, 60000);
+    room.currentRoundTimer = setInterval(() => {
+    room.remainingTime -= 1000;
+    if(room.remainingTime <= 0)
+    {
+      // Time is up, end the round
+      endRound(io,roomId,{reason:"timeout"});
+    }
+    else
+    {
+      // Time is still-left update to anybody
+      io.to(roomId).emit("timerUpdate",{
+        remainingTime:room.remainingTime
+      })
+    }
+    }, 1000); // Run this every second
   } catch (error) {
     console.log(error);
   }
