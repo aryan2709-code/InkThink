@@ -1,5 +1,4 @@
 // Entry point for socket.io backend part
-
 import { Server, Socket } from "socket.io";
 import roomHandler from "./roomHandler.js";
 import {gameHandler} from "./gameHandler.js";
