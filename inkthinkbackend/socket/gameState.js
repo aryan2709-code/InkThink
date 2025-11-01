@@ -1,62 +1,51 @@
 const rooms = new Map();
 const words = [
-  "dog","cat","lion","tiger","elephant","giraffe","monkey","zebra","bear","wolf",
-  "fox","rabbit","deer","panda","horse","sheep","cow","goat","pig","mouse",
-  "rat","snake","frog","lizard","turtle","crocodile","hippo","rhino","kangaroo","koala",
-  "squirrel","bat","owl","eagle","parrot","penguin","duck","chicken","rooster","peacock",
-  "fish","whale","shark","dolphin","crab","octopus","lobster","jellyfish","seal","bee",
-  "butterfly","ant","spider","snail","worm","ladybug","dragonfly","fly","mosquito","camel",
+  // Animals
+  "dog", "cat", "elephant", "lion", "zebra", "giraffe", "monkey", "panda",
+  "bear", "rabbit", "horse", "cow", "pig", "sheep", "snake", "frog",
+  "turtle", "crocodile", "kangaroo", "bat", "owl", "eagle", "parrot",
+  "penguin", "chicken", "fish", "whale", "shark", "dolphin", "crab",
+  "octopus", "jellyfish", "bee", "butterfly", "spider", "snail", "camel",
 
-  "apple","banana","orange","grape","mango","pear","lemon","lime","peach","plum",
-  "cherry","berry","kiwi","papaya","pineapple","watermelon","melon","strawberry","coconut","pomegranate",
-  "tomato","potato","onion","garlic","carrot","cabbage","broccoli","cauliflower","spinach","pepper",
-  "chili","cucumber","corn","pumpkin","radish","beetroot","eggplant","peas","bean","lettuce",
+  // Food & Drink
+  "apple", "banana", "orange", "grapes", "watermelon", "strawberry",
+  "cherry", "pineapple", "coconut", "carrot", "broccoli", "corn",
+  "pumpkin", "mushroom", "pizza", "burger", "sandwich", "cake", "cookie",
+  "donut", "bread", "fries", "hotdog", "sushi", "taco", "cheese", "egg",
+  "coffee", "ice cream",
 
-  "pizza","burger","sandwich","cake","cookie","donut","bread","muffin","biscuit","pancake",
-  "brownie","chocolate","fries","hotdog","omelet","sushi","taco","noodles","pasta","steak",
-  "rice","cheese","sausage","meatball","cupcake","pie","waffle","croissant","bagel","dumpling",
+  // Household & Objects
+  "chair", "table", "bed", "couch", "lamp", "clock", "mirror", "door",
+  "window", "key", "lock", "book", "pen", "pencil", "scissors", "broom",
+  "toothbrush", "soap", "towel", "plate", "fork", "spoon", "knife", "cup",
+  "bottle", "bomb", "candle",
 
-  "tree","flower","leaf","grass","bush","rock","stone","mountain","hill","volcano",
-  "river","lake","island","forest","cave","beach","sand","cloud","rainbow","snowflake",
-  "sun","moon","star","planet","comet","ocean","wave","cliff","desert","valley",
-  "mushroom","seed","branch","root","flowerpot","vine","log","stump","pinecone","nest",
+  // Technology & Tools
+  "phone", "camera", "computer", "laptop", "keyboard", "mouse", "television",
+  "remote", "headphones", "microphone", "light bulb", "battery", "hammer",
+  "screwdriver", "wrench", "saw", "ladder", "paint brush",
 
-  "shirt","pants","jeans","jacket","coat","dress","skirt","socks","shoes","boots",
-  "hat","cap","belt","tie","gloves","scarf","sweater","hoodie","uniform","helmet",
-  "glasses","watch","ring","bracelet","necklace","earring","mask","bag","backpack","purse",
+  // Transportation
+  "car", "bus", "truck", "train", "boat", "ship", "airplane", "helicopter",
+  "bicycle", "motorbike", "submarine", "rocket", "ambulance", "fire truck",
+  "police car", "skateboard", "hot air balloon", "tractor",
 
-  "chair","table","bed","sofa","couch","desk","lamp","clock","mirror","curtain",
-  "carpet","pillow","blanket","mat","shelf","cabinet","drawer","door","window","key",
-  "lock","vase","basket","bucket","bottle","plate","cup","glass","spoon","fork",
-  "knife","broom","mop","towel","candle","soap","brush","toothbrush","comb","remote",
+  // Nature & Places
+  "tree", "flower", "sun", "moon", "star", "rainbow", "cloud", "rain",
+  "snowflake", "mountain", "volcano", "ocean", "wave", "beach", "island",
+  "cave", "river", "house", "castle", "bridge", "tent", "igloo", "pyramid",
+  "barn",
 
-  "car","bus","truck","train","boat","ship","airplane","helicopter","bicycle","motorbike",
-  "scooter","submarine","tram","jeep","van","taxi","rocket","canoe","kayak","yacht",
-  "tractor","ambulance","policecar","firetruck","cart","skateboard","sled","surfboard","balloon","glider",
+  // Clothing & Wearables
+  "shirt", "pants", "jacket", "dress", "skirt", "socks", "shoes", "boots",
+  "hat", "tie", "gloves", "scarf", "helmet", "glasses", "watch", "ring",
+  "necklace", "crown", "mask", "umbrella",
 
-  "hammer","nail","screw","screwdriver","wrench","saw","drill","pliers","ladder","tape",
-  "brush","roller","bucket","spade","shovel","axe","pickaxe","wheelbarrow","rake","hoe",
-  "computer","laptop","keyboard","mouse","monitor","printer","phone","tablet","camera","speaker",
-  "headphones","mic","fan","bulb","charger","battery","cable","switch","router","radio",
-
-  "ball","bat","racket","net","goal","helmet","glove","jersey","trophy","medal",
-  "whistle","cone","bench","field","stick","skate","ski","kite","frisbee","board",
-
-  "book","notebook","pen","pencil","marker","crayon","eraser","sharpener","scale","ruler",
-  "compass","bag","folder","envelope","paper","tape","glue","paint","palette","brush",
-
-  "house","apartment","hut","tent","barn","cottage","villa","castle","palace","tower",
-  "bridge","road","street","park","garden","fountain","playground","stadium","theater","library",
-  "church","temple","mosque","shop","market","school","college","hospital","office","garage",
-
-  "dragon","unicorn","mermaid","wizard","fairy","robot","alien","ghost","monster","knight",
-  "castle","sword","shield","crown","torch","wand","map","treasure","scroll","potion",
-
-  "head","face","eye","ear","nose","mouth","hair","hand","arm","leg",
-  "foot","finger","toe","knee","neck","shoulder","elbow","back","chest","stomach",
-
-  "balloon","gift","ribbon","flag","banner","starfish","shell","anchor","wheel","gear",
-  "rocket","clock","dice","coin","keychain","lantern","crown","feather","nest","egg"
+  // Misc. & Fantasy
+  "dragon", "unicorn", "robot", "alien", "ghost", "monster", "knight",
+  "sword", "shield", "wand", "pirate", "map", "treasure chest", "anchor",
+  "guitar", "drum", "trumpet", "trophy", "medal", "ball", "goal", "kite",
+  "balloon", "gift", "flag", "dice", "puzzle piece"
 ];
 
 

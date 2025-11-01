@@ -1,348 +1,312 @@
 import { useEffect, useRef, useState } from "react";
-import { io } from "socket.io-client";
+import {io} from "socket.io-client";
 
-// --- Constants ---
 const SOCKET_URL = "http://localhost:4000";
 
-// --- Socket Hook (Ensures single instance) ---
-function useSocket() {
+// Socket hook for ensuring a single connection 
+function useSocket()
+{
   const socketRef = useRef(null);
-  if (!socketRef.current) {
-    socketRef.current = io(SOCKET_URL, { transports: ["websocket"] });
+  if(!socketRef.current)
+  {
+    socketRef.current = io(SOCKET_URL, {transports:["websocket"] });
   }
   return socketRef.current;
 }
 
-// --- Main App Component ---
-export default function App() {
+export default function App()
+{
   const socket = useSocket();
 
-  // --- State Management ---
-  // Player & Room State
+  // State Management
+  // Player and room state
   const [username, setUsername] = useState("");
   const [roomId, setRoomId] = useState("");
-  const [gameState, setGameState] = useState("lobby"); // 'lobby', 'game', 'game_over'
-  
-  // Game Logic State
-  const [players, setPlayers] = useState([]); // Array of player names
-  const [scores, setScores] = useState(new Map()); // Map<username, score>
-  const [isDrawer, setIsDrawer] = useState(false);
-  const [currentDrawer, setCurrentDrawer] = useState("");
-  const [currentWord, setCurrentWord] = useState("");
-  const [currentRound, setCurrentRound] = useState(0);
-  const [totalRounds, setTotalRounds] = useState(0);
-  const [remainingTime, setRemainingTime] = useState(null);
-  const [gameWinner, setGameWinner] = useState(null);
+  const [gameState, setGameState] = useState("lobby");
+   // "lobby" , "game" , "game_over"
 
-  // UI State
-  const [messages, setMessages] = useState([]);
-  const [guess, setGuess] = useState("");
+   // Game logic state
+   const [players, setPlayers] = useState([]);
+   const [scores, setScores] = useState(new Map()); // Map<username, score>
+   const [isDrawer, setIsDrawer] = useState(false);
+   const [currentDrawer, setCurrentDrawer] = useState("");
+   const [currentWord, setCurrentWord] = useState("");
+   const [currentRound, setCurrentRound] = useState(0);
+   const [totalRounds, setTotalRounds] = useState(0);
+   const [gameWinner, setGameWinner] = useState(null);
 
-  // Drawing Tool State (REMOVED)
-  
-  // Refs
-  const canvasRef = useRef(null);
-  const chatEndRef = useRef(null);
-  const isDrawingRef = useRef(false);
-  const lastDrawPointRef = useRef(null); // {x, y}
+   // UI state
+   const [messages,setMessages] = useState([]);
+   const [guess, setGuess] = useState("");
 
-  // --- Utility Functions ---
-  const addMessage = (m) => {
-    setMessages((prev) => [...prev, m].slice(-200)); // Keep list bounded
-  };
+   // Refs
+   const canvasRef = useRef(null);
+   const chatEndRef = useRef(null);
+   const isDrawingRef = useRef(false);
+   const lastDrawPointRef = useRef(null); // {x,y}
 
-  const clearCanvasLocal = () => {
+   // Utility function to add message
+   const addMessage = (m) => {
+    setMessages((prev) => [...prev,m].slice(-200));
+   }
+
+   // Utility function to clear canvas
+   const clearCanvasLocal = () => {
     const canvas = canvasRef.current;
-    if (!canvas) return;
+    if(!canvas) return;
     const ctx = canvas.getContext("2d");
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-  };
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+   }
 
-  // --- Canvas Setup & Event Handlers ---
-  useEffect(() => {
+   // --- Canvas setup and event listeners
+   useEffect(() => {
     const canvas = canvasRef.current;
-    if (!canvas || gameState !== 'game') return;
+    if(!canvas || gameState !== 'game') return;
 
     const ctx = canvas.getContext("2d");
-    
+
     // Helper to draw a single stroke segment
     // This is used by both local drawing and socket event drawing
     const drawSegment = (stroke) => {
-      if (!ctx || !stroke) return;
-      
-      // Handle the "clear" event
-      if (stroke.clear) {
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        return;
-      }
+        if(!ctx || !stroke) return;
+        // Handle the clear event
+        if(stroke.clear)
+        {
+          ctx.clearRect(0,0,canvas.width,canvas.height);
+          return;
+        }
+        // Set styles of the stroke, (hardcoded to 3px black)
+        ctx.lineWidth = 3;
+        ctx.strokeStyle = "#000000";
+        ctx.lineCap = "round";
+        ctx.lineJoin = "round";
 
-      // Set styles (hardcoded to 3px black)
-      ctx.lineWidth = 3;
-      ctx.strokeStyle = "#000000";
-      ctx.lineCap = "round";
-      ctx.lineJoin = "round";
-
-      ctx.beginPath();
-      if (stroke.prevX != null && stroke.prevY != null) {
-        // Line segment
-        ctx.moveTo(stroke.prevX, stroke.prevY);
-        ctx.lineTo(stroke.x, stroke.y);
-        ctx.stroke();
-      } else {
-        // Single point (or start of a line)
-        // Draw a tiny filled circle for a more visible dot
-        ctx.fillStyle = "#000000";
-        ctx.arc(stroke.x, stroke.y, 1.5, 0, 2 * Math.PI); // 1.5 = 3 (width) / 2
-        ctx.fill();
-      }
+        ctx.beginPath();
+        if(stroke.prevX != null && stroke.prevY != null)
+        {
+          // Line segment
+          ctx.moveTo(stroke.prevX, stroke.prevY);
+          ctx.lineTo(stroke.x, stroke.y);
+          ctx.stroke();
+        }
+        else
+        {
+          // Single point or a start of a line
+          ctx.fillStyle = "#000000";
+          ctx.arc(stroke.x, stroke.y, 1.5, 0, 2 * Math.PI); // 1.5 = 3 (width) / 2
+          ctx.fill();
+        }
     };
 
-    // --- Pointer Event Handlers (for the local drawer) ---
+    // Pointer event handlers for the local drawing
     const onPointerDown = (e) => {
-      if (!isDrawer || e.button !== 0) return; // Only drawer, only left click
+      if(!isDrawer || e.button !== 0) return; 
       isDrawingRef.current = true;
-
       const rect = canvas.getBoundingClientRect();
-      // SCALING FIX: Convert screen coords to canvas coords
+
+      // Scaling fix: convert screen coords to canvas coords
       const scaleX = canvas.width / rect.width;
       const scaleY = canvas.height / rect.height;
       const x = (e.clientX - rect.left) * scaleX;
       const y = (e.clientY - rect.top) * scaleY;
 
+
       const stroke = {
         x,
         y,
         prevX: null,
-        prevY: null,
+        prevY : null
       };
 
-      drawSegment(stroke); // Draw dot locally
-      lastDrawPointRef.current = { x, y };
-      socket.emit("drawing", { roomId, stroke }); // Emit dot
-      
+      drawSegment(stroke); //draw dot locally
+      lastDrawPointRef.current = {x,y};
+      socket.emit("drawing", {roomId, stroke}); // Emit dot
+       
       canvas.setPointerCapture(e.pointerId);
     };
 
-    const onPointerMove = (e) => {
-      if (!isDrawingRef.current || !isDrawer) return;
 
+    const onPointerMove = (e) => {
+      if(!isDrawingRef.current || !isDrawer) return;
       const rect = canvas.getBoundingClientRect();
-      // SCALING FIX: Convert screen coords to canvas coords
       const scaleX = canvas.width / rect.width;
       const scaleY = canvas.height / rect.height;
       const x = (e.clientX - rect.left) * scaleX;
       const y = (e.clientY - rect.top) * scaleY;
 
       const prev = lastDrawPointRef.current;
-
       const stroke = {
         x,
         y,
-        prevX: prev?.x ?? null,
-        prevY: prev?.y ?? null,
+        prevX : prev?.x ?? null,
+        prevY : prev?.y ?? null
       };
 
-      drawSegment(stroke); // Draw segment locally
-      lastDrawPointRef.current = { x, y };
-      socket.emit("drawing", { roomId, stroke }); // Emit segment
-    };
+      drawSegment(stroke);
+      lastDrawPointRef.current = {x,y};
+      socket.emit("drawing", {roomId,stroke}); 
+    }
 
     const onPointerUp = (e) => {
-      if (!isDrawingRef.current) return;
+      if(!isDrawingRef.current) return;
       isDrawingRef.current = false;
       lastDrawPointRef.current = null;
-      try {
+      try{
         canvas.releasePointerCapture(e.pointerId);
-      } catch (err) {
-        // Ignore errors if capture was already released
       }
-    };
+      catch(err){
+         // Ignore errors if capture was already released
+      }
+    }
 
-    // --- Socket listener for remote drawings ---
-    const handleRemoteDrawing = ({ stroke }) => {
+    // Socket listener for remote drawings
+    const handleRemoteDrawing = ({stroke}) => {
       drawSegment(stroke);
-    };
-    
+    }
+
     socket.on("drawing", handleRemoteDrawing);
 
     // Attach local listeners
-    canvas.addEventListener("pointerdown", onPointerDown);
-    canvas.addEventListener("pointermove", onPointerMove);
-    window.addEventListener("pointerup", onPointerUp); // Listen on window for 'lift-off' anywhere
-    window.addEventListener("pointercancel", onPointerUp);
+    canvas.addEventListener("pointerdown",onPointerDown);
+    canvas.addEventListener("pointermove",onPointerMove);
+    window.addEventListener("pointerup",onPointerUp);
+    window.addEventListener("pointercancel",onPointerUp);
 
     return () => {
       // Cleanup
-      socket.off("drawing", handleRemoteDrawing);
-      canvas.removeEventListener("pointerdown", onPointerDown);
-      canvas.removeEventListener("pointermove", onPointerMove);
-      window.removeEventListener("pointerup", onPointerUp);
-      window.removeEventListener("pointercancel", onPointerUp);
-    };
-  }, [isDrawer, roomId, socket, gameState]); // Removed drawColor and lineWidth dependencies
+      socket.off("drawing",handleRemoteDrawing);
+      canvas.removeEventListener("pointerdown",onPointerDown);
+      canvas.removeEventListener("pointermove",onPointerMove);
+      window.removeEventListener("pointerup",onPointerUp);
+      window.removeEventListener("pointercancel",onPointerUp);
+    }
 
-  // --- Core Socket Event Listeners (Game Logic) ---
-  useEffect(() => {
+   },[isDrawer,roomId,socket,gameState]);
+
+   // Socket Event Listeners
+   useEffect(() => {
     const handlers = {
       message: (payload) => {
         const msg = typeof payload === "string" ? payload : payload.message;
         addMessage(`SYSTEM: ${msg || "Unknown message"}`);
       },
-      error: ({ message }) => {
-        addMessage(`ERROR: ${message || "Unknown error"}`);
+      error : ({message}) => {
+        addMessage(`ERROR: ${message || "Unknown error"}`)
       },
-      roomCreated: ({ roomId, message }) => {
-        addMessage(message || `Room ${roomId} created.`);
+      roomCreated: ({roomId,message }) => {
+        addMessage(message || `Room ${roomId} created.`)
         setGameState("game");
       },
-      roomJoined: ({ roomId, message }) => {
-        addMessage(message || `Joined room ${roomId}.`);
+      roomJoined: ({roomId,message}) => {
+        addMessage(message || `Joined room ${roomId}.`)
         setGameState("game");
       },
-      gameStarted: ({ players: pList, totalRounds: tr, message }) => {
-        addMessage(message || "The game has started!");
+      gameStarted: ({players:pList, totalRounds: tr, message}) => {
+        addMessage(message || "The game has started");
         setPlayers(Array.isArray(pList) ? pList : []);
-        // Initialize scores
+        // Initialise scores
         const newScores = new Map(
-          (Array.isArray(pList) ? pList : []).map(name => [name, 0])
-        );
+          (Array.isArray(pList) ? pList: []).map(name => [name,0])
+        )
         setScores(newScores);
         setTotalRounds(tr || pList.length);
-        setGameState("game");
+        setGameState("game")
       },
-      roundStarted: ({ drawer, roundNumber: rn, remainingTime: rt, message }) => {
+      roundStarted: ({drawer, roundNumber:rn, message}) => {
         addMessage(message || `Round ${rn + 1} started. ${drawer} is drawing.`);
-        clearCanvasLocal(); // CRITICAL: Clear canvas for everyone
+        clearCanvasLocal();
         setIsDrawer(drawer === username);
         setCurrentDrawer(drawer);
         setCurrentRound(rn || 0);
-        // FIX: Only clear the word if you are NOT the new drawer.
-        // The drawer will get the word from 'yourTurn'.
-        if (drawer !== username) {
-          setCurrentWord(""); // Clear word for guessers
+        if(drawer !== username)
+        {
+          setCurrentWord(""); // clear word for guessers
         }
-        setRemainingTime(Math.ceil((rt || 60000) / 1000));
-        setGameWinner(null); // Clear winner from previous game
+        setGameWinner(null);
       },
-      yourTurn: ({ word, remainingTime: rt, message }) => {
-        // We don't add the word to the public chat log
-        addMessage(message || `It's your turn! Good luck.`);
-        setCurrentWord(word || "");
+      yourTurn: ({word, message}) => {
+        addMessage( message || "Its your turn to draw");
+        setCurrentWord(word);
         setIsDrawer(true);
-        setRemainingTime(Math.ceil((rt || 60000) / 1000));
       },
-      timer: ({ remainingTime: msOrSec }) => {
-        // Backend sends time in different formats, normalize to seconds
-        const timeInMs = typeof msOrSec === 'number' ? msOrSec : 0;
-        const timeInSec = timeInMs > 1000 ? Math.ceil(timeInMs / 1000) : Math.ceil(timeInMs);
-        setRemainingTime(timeInSec);
+      correctGuess: ({player, guess, message}) => {
+        addMessage(message|| `${player} guessed correctly!`)
       },
-      timerUpdate: ({ remainingTime: msOrSec }) => {
-        const timeInMs = typeof msOrSec === 'number' ? msOrSec : 0;
-        const timeInSec = timeInMs > 1000 ? Math.ceil(timeInMs / 1000) : Math.ceil(timeInMs);
-        setRemainingTime(timeInSec);
-      },
-      correctGuess: ({ player, guess, message }) => {
-        addMessage(message || `${player} guessed correctly!`);
-      },
-      roundEnded: ({ winner, word, scores: scoresPayload, message }) => {
-        addMessage(message || `Round over! The word was: ${word}.`);
-        if (winner) addMessage(`${winner} won the round!`);
-        
-        // Update scores from the payload
-        if (Array.isArray(scoresPayload)) {
-          const newScores = new Map(scoresPayload.map(s => [s.player, s.score]));
+      roundEnded: ({winner,word,scores:scoresPayload, message}) => {
+        addMessage(message|| `Round Over. The word was ${word}`);
+        if(winner) addMessage(`${winner} won the round.`);
+        // Update scores
+        if(Array.isArray(scoresPayload))
+        {
+          const newScores = new Map(scoresPayload.map(s => [s.player,s.score]));
           setScores(newScores);
         }
-        
         setIsDrawer(false);
         setCurrentWord("");
-        setRemainingTime(null);
       },
-      gameEnded: ({ winner, scores: scoresPayload, message }) => {
-        addMessage(message || `GAME OVER!`);
-        if (winner) addMessage(`The winner is ${winner}!`);
-        
+      gameEnded: ({winner,scores:scoresPayload,message}) => {
+        addMessage(message || `Game over!`);
+        if(winner) addMessage(`The winner is ${winner}`);
         // Update final scores
-        if (Array.isArray(scoresPayload)) {
-          const newScores = new Map(scoresPayload.map(s => [s.player, s.score]));
+        if(Array.isArray(scoresPayload))
+        {
+          const newScores = new Map(scoresPayload.map(s => [s.player,s.score]));
           setScores(newScores);
         }
-
         setGameState("game_over");
         setGameWinner(winner);
         setIsDrawer(false);
         setCurrentWord("");
-        setRemainingTime(null);
       },
       playerLeft: (payload) => {
-        const msg = payload.message || (payload.player ? `${payload.player} left.` : "A player left.");
+         const msg = payload.message || (payload.player ? `${payload.player} left.` : "A player left.");
         addMessage(msg);
-        // Note: Backend doesn't seem to send updated player/score list here.
-        // We'll rely on the next 'gameStarted' or 'roundEnded' to sync.
-      },
+      }
     };
 
-    Object.entries(handlers).forEach(([ev, fn]) => socket.on(ev, fn));
+    Object.entries(handlers).forEach(([ev,fn]) => socket.on(ev,fn));
     return () => {
-      Object.entries(handlers).forEach(([ev, fn]) => socket.off(ev, fn));
-    };
-  }, [socket, username]); // Re-run if username changes (for 'isDrawer' checks)
+      Object.entries(handlers).forEach(([ev,fn]) => socket.off(ev,fn));
+    }
+   },[socket,username]);
 
-  // --- Auto-scroll chat ---
-  useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+   // Auto-scroll-chat
+   useEffect(() => {
+     chatEndRef.current?.scrollIntoView({behaviour:"smooth"});
+   },[messages]);
 
-  // --- Timer Countdown ---
-  useEffect(() => {
-    if (remainingTime === null || remainingTime <= 0) return;
-    if (gameState !== 'game') return; // Only count down during the game
+   // Client-Side actions
+   const handleCreateRoom = () => {
+    if(!username || !roomId) addMessage("Name and roomId are required.");
+    socket.emit("createRoom",{roomId,username});
+   }
 
-    const timerId = setTimeout(() => {
-      setRemainingTime((prevTime) => (prevTime ? prevTime - 1 : 0));
-    }, 1000); // 1 second interval
-
-    return () => {
-      clearTimeout(timerId); // Cleanup
-    };
-  }, [remainingTime, gameState]); // Re-run when time changes or game state changes
-
-
-  // --- Client-Side Actions ---
-  const handleCreateRoom = () => {
-    if (!username || !roomId) return addMessage("Name and Room ID are required.");
-    socket.emit("createRoom", { roomId, username });
-  };
-
-  const handleJoinRoom = () => {
-    if (!username || !roomId) return addMessage("Name and Room ID are required.");
+   const handleJoinRoom = () => {
+     if (!username || !roomId) return addMessage("Name and Room ID are required.");
     socket.emit("joinRoom", { roomId, username });
-  };
+   }
 
-  const handleStartGame = () => {
-    socket.emit("startGame", { roomId });
-  };
+   const handleStartGame = () => {
+    socket.emit("startGame", {roomId});
+   }
 
-  const handleSubmitGuess = (e) => {
+   const handleSubmitGuess = (e) => {
     e.preventDefault();
-    if (!guess.trim() || isDrawer) return;
-    socket.emit("submitGuess", { roomId, guess: guess.trim() });
-    setGuess(""); // Clear input
-  };
+    if(!guess.trim() || isDrawer) return;
+    socket.emit("submitGuess", {roomId, guess:guess.trim()});
+    setGuess("");
+   }
 
-  const handleClearCanvas = () => {
-    if (!isDrawer) return;
-    // 1. Clear locally
+   const handleClearCanvas = () => {
+    if(!isDrawer) return;
     clearCanvasLocal();
-    // 2. Emit a special "clear" stroke to others
-    socket.emit("drawing", { 
-      roomId, 
-      stroke: { clear: true } 
+    socket.emit("drawing",{
+      roomId,
+      stroke: {clear:true}
     });
-  };
+   }
 
-  const handlePlayAgain = () => {
+   const handlePlayAgain = () => {
     // Reset all game state
     setGameState("lobby");
     setPlayers([]);
@@ -352,14 +316,14 @@ export default function App() {
     setCurrentWord("");
     setCurrentRound(0);
     setTotalRounds(0);
-    setRemainingTime(null);
     setGameWinner(null);
     setMessages([]);
     // We keep username and roomId for convenience
   };
 
-  // --- Render Functions ---
 
+  // Render Functions
+  
   const renderLobby = () => (
     <div className="w-full max-w-md p-8 space-y-6 bg-slate-800 rounded-xl shadow-2xl">
       <h1 className="text-5xl font-bold text-center text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-cyan-400">
@@ -507,11 +471,6 @@ export default function App() {
             </div>
           )}
 
-          {remainingTime != null && (
-            <div className={`text-3xl font-extrabold ${remainingTime <= 10 ? 'text-red-500 animate-pulse' : 'text-slate-200'}`}>
-              ⏳ {remainingTime}s
-            </div>
-          )}
         </div>
 
         {/* --- Canvas & Word Overlay --- */}
@@ -545,12 +504,12 @@ export default function App() {
               onChange={(e) => setGuess(e.target.value)}
               className="flex-grow px-4 py-3 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
               placeholder={currentDrawer ? `Guess what ${currentDrawer} is drawing...` : "Waiting for round to start..."}
-              disabled={!currentDrawer || remainingTime === 0}
+              disabled={!currentDrawer}
             />
             <button
               type="submit"
               className="px-6 py-3 font-semibold text-white bg-blue-600 rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:ring-offset-slate-900 transition duration-150 ease-in-out disabled:opacity-50"
-              disabled={!guess.trim() || !currentDrawer || remainingTime === 0}
+              disabled={!guess.trim() || !currentDrawer}
             >
               Submit
             </button>
@@ -568,4 +527,3 @@ export default function App() {
     </div>
   );
 }
-
